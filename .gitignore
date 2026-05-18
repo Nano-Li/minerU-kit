@@ -4,9 +4,8 @@ run.py
 # ── PDF source files (large, personal documents) ──────────────────────────
 *.pdf
 
-# ── MinerU output directories ─────────────────────────────────────────────
-*_mineru/
-part_*/
+# ── MinerU output directory ───────────────────────────────────────────────
+output/
 
 # ── Python cache ──────────────────────────────────────────────────────────
 __pycache__/

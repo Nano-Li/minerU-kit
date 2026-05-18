@@ -18,7 +18,16 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 
+import re
+
 import requests
+
+# ---------------------------------------------------------------------------
+# Project-level paths
+# ---------------------------------------------------------------------------
+
+PROJECT_DIR        = Path(__file__).parent
+DEFAULT_OUTPUT_DIR = PROJECT_DIR / "output"
 
 # ---------------------------------------------------------------------------
 # Optional: pypdf for page-count detection.  Falls back gracefully if absent.
@@ -299,6 +308,48 @@ def process_segment(
 
 
 # ---------------------------------------------------------------------------
+# Title extraction & filename sanitisation
+# ---------------------------------------------------------------------------
+
+def _extract_title_from_layout(layout_path: Path) -> str | None:
+    """
+    Read layout.json and return the text of the first type='title' block on page 0.
+    Returns None if the file is missing, unreadable, or contains no title block.
+    """
+    try:
+        layout = json.loads(layout_path.read_bytes().decode("utf-8"))
+        page0  = (layout.get("pdf_info") or [{}])[0]
+        for block in page0.get("para_blocks", []):
+            if block.get("type") == "title":
+                text = " ".join(
+                    span.get("content", "")
+                    for line in block.get("lines", [])
+                    for span in line.get("spans", [])
+                ).strip()
+                if text:
+                    return text
+    except Exception:
+        pass
+    return None
+
+
+def _clean_for_path(title: str) -> str:
+    """
+    Sanitise a string for use as a folder / file name:
+      - strip Windows/POSIX reserved chars:  \\ / : * ? " < > |
+      - replace whitespace runs with a single _
+      - collapse consecutive _ into one
+      - strip leading/trailing dots and _
+      - truncate to 120 characters
+    """
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "", title)
+    cleaned = re.sub(r"\s+",                   "_", cleaned)
+    cleaned = re.sub(r"_+",                    "_", cleaned)
+    cleaned = cleaned.strip("._")
+    return cleaned[:120] or "untitled"
+
+
+# ---------------------------------------------------------------------------
 # Merge  (auto-called after multi-segment parse)
 # ---------------------------------------------------------------------------
 
@@ -423,7 +474,7 @@ def parse_pdf(
     ----------
     pdf       : Path to the PDF file.
     token     : MinerU API token (mineru.net).
-    out       : Output base directory.  Defaults to <pdf_stem>_mineru/ next to the PDF.
+    out       : Output base directory.  Defaults to <project>/output/<pdf_stem>/.
     model     : "pipeline" (default) or "vlm".
     lang      : Language hint — "ch" (default), "en", "ja", "fr", etc.
     ocr       : Force OCR mode (is_ocr=True).  Use for scanned PDFs.
@@ -440,7 +491,7 @@ def parse_pdf(
     if pdf_path.suffix.lower() != ".pdf":
         print(f"[WARN] File does not end with .pdf: {pdf_path.name}")
 
-    out_base  = Path(out).resolve() if out else pdf_path.parent / f"{pdf_path.stem}_mineru"
+    out_base  = Path(out).resolve() if out else DEFAULT_OUTPUT_DIR / pdf_path.stem
     timeout_s = timeout * 60
     pdf_name  = _sanitize_filename(pdf_path.name)
 
@@ -492,6 +543,38 @@ def parse_pdf(
 
     if n_seg > 1:
         merge_parts(out_base)
+
+    # ── Extract title from layout.json and rename output dir + md file ────
+    layout_for_title = (
+        out_base / "part_001" / "layout.json" if n_seg > 1
+        else out_base / "layout.json"
+    )
+    title_raw   = _extract_title_from_layout(layout_for_title)
+    title_clean = _clean_for_path(title_raw) if title_raw else None
+
+    if title_clean:
+        print(f"\n  Title detected: {title_raw}")
+
+        # Rename output directory (only when using the default output path)
+        if not out:
+            new_base = out_base.parent / title_clean
+            if new_base != out_base:
+                if new_base.exists():
+                    print(f"  [WARN] Target dir already exists, keeping original name: {out_base.name}")
+                else:
+                    out_base.rename(new_base)
+                    out_base = new_base
+                    print(f"  Output dir → {out_base.name}")
+
+        # Rename the final md file
+        md_src_name = "full_merged.md" if n_seg > 1 else "full.md"
+        md_src = out_base / md_src_name
+        if md_src.exists():
+            md_dst = out_base / f"{title_clean}.md"
+            md_src.rename(md_dst)
+            print(f"  MD file    → {md_dst.name}")
+    else:
+        print("\n  [WARN] No title block found in layout.json; keeping default file names.")
 
     print(f"\n  Results: {out_base}")
     return out_base
