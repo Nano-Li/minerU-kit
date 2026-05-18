@@ -1,0 +1,29 @@
+# ── Personal runner (contains API token and local paths) ──────────────────
+run.py
+
+# ── PDF source files (large, personal documents) ──────────────────────────
+*.pdf
+
+# ── MinerU output directories ─────────────────────────────────────────────
+*_mineru/
+part_*/
+
+# ── Python cache ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+
+# ── Virtual environments ───────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── IDE / OS ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# ── Misc local notes ──────────────────────────────────────────────────────
+*.txt
