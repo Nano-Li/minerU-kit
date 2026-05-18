@@ -164,4 +164,3 @@ Use `run.py` locally only; share code via `mineru_client.py`.
 
 - MinerU API docs: <https://mineru.net/doc/docs/index_en>
 - MinerU output format: <https://opendatalab.github.io/MinerU/reference/output_files/>
-- llm-for-zotero (original TS implementation): <https://github.com/yilewang/llm-for-zotero>
