@@ -8,9 +8,10 @@ move_llm_minerU.py — 批量整理 MinerU 解析输出，按论文标题重命�
 功能：
   - 遍历 SOURCE_DIR 下每个子文件夹（每个子文件夹 = 一篇论文的解析输出）
   - 从 layout.json 中程序化提取论文标题
-  - 以清洗后的标题重命名，**复制**到 TARGET_DIR（源目录原封不动）
-  - 复制时排除：layout.json、layout_merged.json、*_origin.pdf
-  - 主 md 文件重命名为 <论文标题>.md
+  - md 文件直接复制到 TARGET_DIR/<论文标题>.md（不创建子文件夹）
+  - 图片统一复制到 TARGET_DIR/images/（自动创建，多篇论文共享同一 images 目录）
+  - 若目标已存在同名 .md 则跳过，不覆盖
+  - 源目录原封不动
 """
 
 import shutil
@@ -24,29 +25,14 @@ from mineru_client import _clean_for_path, _extract_title_from_layout
 # ════════════════════════════════════════════════════════════════════════════
 
 # 提取文件夹：包含多个论文解析输出子文件夹的目录
-SOURCE_DIR = r"D:\Projects\pdf_transform\output"
+SOURCE_DIR = r"D:\Research\article_mds"
 
 # 目标文件夹：整理后的论文库
-TARGET_DIR = r"D:\path\to\clean_library"
+TARGET_DIR = r"D:\obsidian\AeroDynamic\raw\论文"
 
 # ════════════════════════════════════════════════════════════════════════════
 # ── 以下无需修改 ────────────────────────────────────────────────────────────
 # ════════════════════════════════════════════════════════════════════════════
-
-# 文件名完全匹配时排除
-_EXCLUDE_NAMES: set[str] = {"layout.json", "layout_merged.json"}
-
-# 文件名后缀匹配时排除（小写）
-_EXCLUDE_SUFFIXES: tuple[str, ...] = ("_origin.pdf",)
-
-
-def _should_exclude(filename: str) -> bool:
-    """返回 True 表示该文件需要跳过，不复制到目标目录。"""
-    if filename in _EXCLUDE_NAMES:
-        return True
-    lower = filename.lower()
-    return any(lower.endswith(s) for s in _EXCLUDE_SUFFIXES)
-
 
 def _pick_md_file(src_dir: Path) -> Path | None:
     """
@@ -64,9 +50,11 @@ def _pick_md_file(src_dir: Path) -> Path | None:
 
 def process_one_folder(src_dir: Path, target_base: Path) -> bool:
     """
-    处理单个论文解析输出目录，复制到 target_base/<cleaned_title>/。
+    处理单个论文解析输出目录：
+      - md 文件 → target_base/<cleaned_title>.md
+      - images/ → target_base/images/（与其他论文共享，逐文件复制，已存在则跳过）
 
-    返回 True 表示成功复制，False 表示跳过。
+    返回 True 表示成功处理，False 表示跳过。
     """
     # ── 1. 提取标题 ──────────────────────────────────────────────────────────
     layout_path = src_dir / "layout.json"
@@ -76,51 +64,43 @@ def process_one_folder(src_dir: Path, target_base: Path) -> bool:
         cleaned_title = _clean_for_path(title_raw)
         print(f"\n  论文标题: {title_raw}")
     else:
-        # fallback：使用原文件夹名（同样清洗）
         cleaned_title = _clean_for_path(src_dir.name)
         print(f"\n  [WARN] 未找到标题块，使用文件夹名作为 fallback: {src_dir.name}")
 
-    # ── 2. 检查目标是否已存在 ─────────────────────────────────────────────────
-    dst_dir = target_base / cleaned_title
-    if dst_dir.exists():
-        print(f"  [SKIP] 目标已存在，跳过: {dst_dir}")
+    # ── 2. 检查目标 md 是否已存在（防止覆盖）────────────────────────────────
+    dst_md = target_base / f"{cleaned_title}.md"
+    if dst_md.exists():
+        print(f"  [SKIP] 目标已存在，跳过: {dst_md.name}")
         return False
 
     # ── 3. 找主 md 文件 ───────────────────────────────────────────────────────
     md_src = _pick_md_file(src_dir)
+    if md_src is None:
+        print(f"  [SKIP] 未找到 .md 文件，跳过: {src_dir.name}")
+        return False
 
-    # ── 4. 创建目标文件夹并逐项复制 ──────────────────────────────────────────
-    dst_dir.mkdir(parents=True, exist_ok=True)
+    # ── 4. 复制 md → target_base/<cleaned_title>.md ───────────────────────────
+    shutil.copy2(md_src, dst_md)
+    print(f"  [md]  {md_src.name} → {dst_md.name}")
 
-    copied_files  = 0
-    skipped_files = 0
+    # ── 5. 复制 images/* → target_base/images/（逐文件，已存在则跳过）────────
+    src_images = src_dir / "images"
+    img_copied = 0
+    img_skipped = 0
+    if src_images.is_dir():
+        dst_images = target_base / "images"
+        dst_images.mkdir(exist_ok=True)
+        for img in src_images.iterdir():
+            if img.is_file():
+                dst_img = dst_images / img.name
+                if dst_img.exists():
+                    img_skipped += 1
+                else:
+                    shutil.copy2(img, dst_img)
+                    img_copied += 1
+        print(f"  [img] 复制 {img_copied} 张，已存在跳过 {img_skipped} 张")
 
-    for item in src_dir.iterdir():
-        # 目录（如 images/）→ 整体 copytree
-        if item.is_dir():
-            shutil.copytree(item, dst_dir / item.name)
-            copied_files += 1
-            continue
-
-        # 文件：检查排除规则
-        if _should_exclude(item.name):
-            skipped_files += 1
-            continue
-
-        # 主 md 文件 → 重命名复制
-        if md_src and item == md_src:
-            dst_name = f"{cleaned_title}.md"
-            shutil.copy2(item, dst_dir / dst_name)
-            copied_files += 1
-            continue
-
-        # 其余文件 → 原名复制
-        shutil.copy2(item, dst_dir / item.name)
-        copied_files += 1
-
-    print(f"  [✓] {src_dir.name}")
-    print(f"      → {dst_dir}")
-    print(f"      复制 {copied_files} 项，跳过 {skipped_files} 项（排除文件）")
+    print(f"  [✓] {src_dir.name} → {dst_md.name}")
     return True
 
 
@@ -145,6 +125,7 @@ def main() -> None:
     print(f"SOURCE : {source}")
     print(f"TARGET : {target}")
     print(f"找到 {len(subdirs)} 个子文件夹，开始处理…")
+    print(f"目标结构：{target}/<title>.md  +  {target}/images/")
     print("─" * 60)
 
     ok_count   = 0
