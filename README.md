@@ -35,16 +35,59 @@ pip install requests pypdf
 
 ### Option A — Edit `run.py` and click Run (recommended)
 
-1. Open `run.py`
-2. Fill in the config section at the top:
+`run.py` is **not committed to the repo** (it contains your personal token and local paths).  
+Create it yourself by copying the template below:
 
 ```python
-PDF   = r"C:\path\to\your\paper.pdf"
-TOKEN = "your_mineru_api_token"
-LANG  = "en"   # or "ch", "ja", etc.
-```
+"""
+run.py — fill in the config below, then click Run in your IDE.
+"""
+from mineru_client import parse_pdf
 
-3. Run the file directly in your IDE (PyCharm / VS Code ▶)
+# ════════════════════════════════════════════════════════════════════════════
+# ── 参数配置（每次改这里就好）──────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+
+# 必填：本地 PDF 文件路径（Windows 路径用 r"..." 或正斜杠）
+PDF = r"C:\path\to\your\paper.pdf"
+
+# 必填：MinerU API Token（在 mineru.net 申请）
+TOKEN = "your_mineru_api_token_here"
+
+# 选填：输出目录。留空则自动输出到项目 output/ 文件夹，并以文章标题命名子文件夹
+OUT = ""
+
+# 解析模型："pipeline"（默认，速度快）或 "vlm"（复杂版式更准）
+MODEL = "pipeline"
+
+# 文档语言："ch"（中文，默认）、"en"（英文）、"ja"（日文）等
+LANG = "en"
+
+# 是否强制 OCR（扫描版 PDF 建议设为 True）
+OCR = False
+
+# 每段最大页数（超过此页数的 PDF 会自动分段提交，默认 200）
+MAX_PAGES = 200
+
+# 每段等待超时（分钟，默认 30）
+TIMEOUT = 30
+
+# ════════════════════════════════════════════════════════════════════════════
+# ── 以下无需修改 ────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    parse_pdf(
+        pdf       = PDF,
+        token     = TOKEN,
+        out       = OUT or None,
+        model     = MODEL,
+        lang      = LANG,
+        ocr       = OCR,
+        max_pages = MAX_PAGES,
+        timeout   = TIMEOUT,
+    )
+```
 
 ### Option B — Command line
 
@@ -64,7 +107,7 @@ python mineru_client.py doc.pdf    --token sk-xxxx --model vlm
 |---------------|--------------|------------------------------------------------------------------|
 | `pdf`         | *(required)* | Path to the local PDF file                                       |
 | `--token`     | *(required)* | MinerU API token — obtain from [mineru.net](https://mineru.net)  |
-| `--out`       | auto         | Output directory (default: `<pdf_stem>_mineru/` next to the PDF) |
+| `--out`       | auto         | Output directory (default: `output/<title>/` inside the project)  |
 | `--model`     | `pipeline`   | Parser model: `pipeline` (fast) or `vlm` (better layout)        |
 | `--lang`      | `ch`         | Language hint: `ch`, `en`, `ja`, `fr`, …                        |
 | `--ocr`       | `False`      | Force OCR mode — use for scanned PDFs                            |
