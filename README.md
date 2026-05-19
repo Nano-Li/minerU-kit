@@ -1,7 +1,6 @@
 # minerU-kit
 
-A lightweight Python tool that calls the **MinerU cloud API v4** to parse local PDF files into Markdown + structured JSON.  
-Mirrors the upload/poll/extract flow from [llm-for-zotero](https://github.com/yilewang/llm-for-zotero).
+A simple utility script that bypasses MinerU's **200-page single-upload limit** — it automatically splits large PDFs into segments, uploads and parses each segment via the **MinerU cloud API v4**, then auto-merges all results into a single clean output.
 
 ---
 
@@ -45,47 +44,66 @@ run.py — fill in the config below, then click Run in your IDE.
 from mineru_client import parse_pdf
 
 # ════════════════════════════════════════════════════════════════════════════
-# ── 参数配置（每次改这里就好）──────────────────────────────────────────────
+# ── Configuration (edit this block only) ────────────────────────────────────
 # ════════════════════════════════════════════════════════════════════════════
 
-# 必填：本地 PDF 文件路径（Windows 路径用 r"..." 或正斜杠）
+# Required: path to local PDF file (use r"..." for Windows paths)
 PDF = r"C:\path\to\your\paper.pdf"
 
-# 必填：MinerU API Token（在 mineru.net 申请）
+# Required: MinerU API token — obtain from mineru.net
 TOKEN = "your_mineru_api_token_here"
 
-# 选填：输出目录。留空则自动输出到项目 output/ 文件夹，并以文章标题命名子文件夹
+# Optional: output directory. Leave empty → output/<title>/ inside the project
 OUT = ""
 
-# 解析模型："pipeline"（默认，速度快）或 "vlm"（复杂版式更准）
+# Parser model: "pipeline" (default, fast) or "vlm" (better for complex layouts)
 MODEL = "pipeline"
 
-# 文档语言："ch"（中文，默认）、"en"（英文）、"ja"（日文）等
+# Document language:
+#   "ch"         — Chinese + English (default)
+#   "ch_server"  — Chinese / English / Traditional Chinese / Japanese
+#   "en"         — English only
+#   "latin"      — French, German, Spanish, Italian, Portuguese, etc.
+#   "japan"      — Japanese
+#   "korean"     — Korean
+#   "arabic"     — Arabic
+#   "cyrillic"   — Russian, etc.
+#   "devanagari" — Hindi, Sanskrit, etc.
 LANG = "en"
 
-# 是否强制 OCR（扫描版 PDF 建议设为 True）
+# Force OCR mode — recommended for scanned (image-only) PDFs
 OCR = False
 
-# 每段最大页数（超过此页数的 PDF 会自动分段提交，默认 200）
+# Manual page range (leave empty to process the entire PDF)
+# Examples:
+#   "1-50"        — parse pages 1–50 only
+#   "1-50,80-100" — parse pages 1–50 and 80–100
+#   "2--2"        — from page 2 to the second-to-last page
+# Note: when set, MAX_PAGES auto-segmentation is ignored
+PAGE_RANGES = ""
+
+# Max pages per segment; PDFs exceeding this are split automatically (default 200)
+# Ignored when PAGE_RANGES is set
 MAX_PAGES = 200
 
-# 每段等待超时（分钟，默认 30）
+# Per-segment poll timeout in minutes (default 30)
 TIMEOUT = 30
 
 # ════════════════════════════════════════════════════════════════════════════
-# ── 以下无需修改 ────────────────────────────────────────────────────────────
+# ── No changes needed below ─────────────────────────────────────────────────
 # ════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     parse_pdf(
-        pdf       = PDF,
-        token     = TOKEN,
-        out       = OUT or None,
-        model     = MODEL,
-        lang      = LANG,
-        ocr       = OCR,
-        max_pages = MAX_PAGES,
-        timeout   = TIMEOUT,
+        pdf         = PDF,
+        token       = TOKEN,
+        out         = OUT or None,
+        model       = MODEL,
+        lang        = LANG,
+        ocr         = OCR,
+        max_pages   = MAX_PAGES,
+        timeout     = TIMEOUT,
+        page_ranges = PAGE_RANGES or None,
     )
 ```
 
@@ -103,16 +121,17 @@ python mineru_client.py doc.pdf    --token sk-xxxx --model vlm
 
 ## Parameters
 
-| Parameter     | Default      | Description                                                      |
-|---------------|--------------|------------------------------------------------------------------|
-| `pdf`         | *(required)* | Path to the local PDF file                                       |
-| `--token`     | *(required)* | MinerU API token — obtain from [mineru.net](https://mineru.net)  |
-| `--out`       | auto         | Output directory (default: `output/<title>/` inside the project)  |
-| `--model`     | `pipeline`   | Parser model: `pipeline` (fast) or `vlm` (better layout)        |
-| `--lang`      | `ch`         | Language hint: `ch`, `en`, `ja`, `fr`, …                        |
-| `--ocr`       | `False`      | Force OCR mode — use for scanned PDFs                            |
-| `--max-pages` | `200`        | Max pages per segment; larger PDFs are split automatically       |
-| `--timeout`   | `30`         | Per-segment poll timeout in minutes                              |
+| Parameter       | Default      | Description                                                                                               |
+|-----------------|--------------|-----------------------------------------------------------------------------------------------------------|
+| `pdf`           | *(required)* | Path to the local PDF file                                                                                |
+| `--token`       | *(required)* | MinerU API token — obtain from [mineru.net](https://mineru.net)                                           |
+| `--out`         | auto         | Output directory (default: `output/<title>/` inside the project)                                         |
+| `--model`       | `pipeline`   | Parser model: `pipeline` (fast) or `vlm` (better for complex layouts)                                    |
+| `--lang`        | `ch`         | Language hint: `ch`, `ch_server`, `en`, `latin` (French/German/Spanish/…), `japan`, `korean`, `arabic`, `cyrillic`, `devanagari` |
+| `--ocr`         | `False`      | Force OCR mode — use for scanned PDFs                                                                     |
+| `--page-ranges` | —            | Parse specific pages only, e.g. `"1-50"`, `"1-50,80-100"`, `"2--2"`. Disables auto-segmentation.        |
+| `--max-pages`   | `200`        | Max pages per segment; larger PDFs are split automatically (ignored when `--page-ranges` is set)          |
+| `--timeout`     | `30`         | Per-segment poll timeout in minutes                                                                       |
 
 ---
 
