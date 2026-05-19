@@ -1,4 +1,4 @@
-# pdf_transform
+# minerU-kit
 
 A lightweight Python tool that calls the **MinerU cloud API v4** to parse local PDF files into Markdown + structured JSON.  
 Mirrors the upload/poll/extract flow from [llm-for-zotero](https://github.com/yilewang/llm-for-zotero).

@@ -30,15 +30,18 @@ PROJECT_DIR        = Path(__file__).parent
 DEFAULT_OUTPUT_DIR = PROJECT_DIR / "output"
 
 # ---------------------------------------------------------------------------
-# Optional: pypdf for page-count detection.  Falls back gracefully if absent.
+# pypdf is required for page-count detection and auto-segmentation.
 # ---------------------------------------------------------------------------
 try:
     from pypdf import PdfReader as _PdfReader          # pypdf >= 3.x
 except ImportError:
     try:
-        from PyPDF2 import PdfReader as _PdfReader      # legacy alias
+        from PyPDF2 import PdfReader as _PdfReader      # legacy alias (older installs)
     except ImportError:
-        _PdfReader = None                               # type: ignore[assignment]
+        raise ImportError(
+            "pypdf is required but not installed.\n"
+            "Run:  pip install pypdf"
+        ) from None
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -59,12 +62,7 @@ def _sanitize_filename(name: str) -> str:
 
 
 def get_pdf_page_count(pdf_path: Path) -> int | None:
-    """Return total page count, or None when pypdf is unavailable / parse fails."""
-    if _PdfReader is None:
-        print("[WARN] pypdf not installed — cannot read page count; "
-              "will submit the entire PDF as one segment.\n"
-              "       Install with: pip install pypdf")
-        return None
+    """Return total page count, or None if the PDF cannot be parsed."""
     try:
         return len(_PdfReader(str(pdf_path)).pages)
     except Exception as exc:
@@ -458,28 +456,44 @@ def merge_parts(out_base: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def parse_pdf(
-    pdf:       str | Path,
-    token:     str,
-    out:       str | Path | None = None,
-    model:     str = "pipeline",
-    lang:      str = "ch",
-    ocr:       bool = False,
-    max_pages: int = 200,
-    timeout:   int = 30,
+    pdf:         str | Path,
+    token:       str,
+    out:         str | Path | None = None,
+    model:       str = "pipeline",
+    lang:        str = "ch",
+    ocr:         bool = False,
+    max_pages:   int = 200,
+    timeout:     int = 30,
+    page_ranges: str | None = None,
 ) -> Path:
     """
     Parse a local PDF with MinerU cloud API and extract results to disk.
 
     Parameters
     ----------
-    pdf       : Path to the PDF file.
-    token     : MinerU API token (mineru.net).
-    out       : Output base directory.  Defaults to <project>/output/<pdf_stem>/.
-    model     : "pipeline" (default) or "vlm".
-    lang      : Language hint — "ch" (default), "en", "ja", "fr", etc.
-    ocr       : Force OCR mode (is_ocr=True).  Use for scanned PDFs.
-    max_pages : Max pages per segment (default 200).  Larger PDFs are split automatically.
-    timeout   : Per-segment poll timeout in minutes (default 30).
+    pdf         : Path to the PDF file.
+    token       : MinerU API token (mineru.net).
+    out         : Output base directory.  Defaults to <project>/output/<pdf_stem>/.
+    model       : "pipeline" (default) or "vlm".
+    lang        : Language hint.  Common values:
+                    "ch"          — Chinese + English (default)
+                    "ch_server"   — Chinese / English / Traditional Chinese / Japanese
+                    "en"          — English only
+                    "latin"       — French, German, Spanish, Italian, Portuguese, …
+                    "japan"       — Japanese
+                    "korean"      — Korean
+                    "arabic"      — Arabic
+                    "cyrillic"    — Russian and other Cyrillic-script languages
+                    "devanagari"  — Hindi, Sanskrit, …
+    ocr         : Force OCR mode (is_ocr=True).  Use for scanned PDFs.
+    max_pages   : Max pages per auto-split segment (default 200).  Ignored when
+                  page_ranges is set.
+    timeout     : Per-segment poll timeout in minutes (default 30).
+    page_ranges : Manual page selection passed directly to the API, e.g. "1-50"
+                  or "1-50,80-100".  When set, auto-split is skipped and the
+                  entire string is submitted as a single task.
+                  Format: comma-separated pages/ranges, e.g. "2,4-6,10-20".
+                  Use "2--2" to mean "page 2 to second-to-last page".
 
     Returns
     -------
@@ -501,12 +515,18 @@ def parse_pdf(
 
     pdf_bytes = pdf_path.read_bytes()
 
-    total_pages = get_pdf_page_count(pdf_path)
-    if total_pages is not None:
-        print(f"Pages  : {total_pages}")
-        page_ranges_list: list[str | None] = build_page_ranges(total_pages, max_pages)  # type: ignore[assignment]
+    # ── Determine segments ────────────────────────────────────────────────────
+    if page_ranges:
+        # Manual override: submit exactly the user-specified range as one task
+        page_ranges_list: list[str | None] = [page_ranges]
+        print(f"Pages  : manual range — {page_ranges}")
     else:
-        page_ranges_list = [None]
+        total_pages = get_pdf_page_count(pdf_path)
+        if total_pages is not None:
+            print(f"Pages  : {total_pages}")
+            page_ranges_list = build_page_ranges(total_pages, max_pages)  # type: ignore[assignment]
+        else:
+            page_ranges_list = [None]
 
     n_seg = len(page_ranges_list)
     if n_seg == 1:
@@ -604,20 +624,24 @@ Examples:
     parser.add_argument("--model",    choices=["pipeline", "vlm"], default="pipeline")
     parser.add_argument("--lang",     default="ch")
     parser.add_argument("--ocr",      action="store_true")
-    parser.add_argument("--max-pages",type=int, default=200)
-    parser.add_argument("--timeout",  type=int, default=30)
+    parser.add_argument("--max-pages",   type=int, default=200)
+    parser.add_argument("--timeout",     type=int, default=30)
+    parser.add_argument("--page-ranges", type=str, default=None,
+                        help="Manual page selection, e.g. '1-50' or '1-50,80-100'. "
+                             "Overrides auto-split when set.")
 
     args = parser.parse_args()
     try:
         parse_pdf(
-            pdf       = args.pdf,
-            token     = args.token,
-            out       = args.out,
-            model     = args.model,
-            lang      = args.lang,
-            ocr       = args.ocr,
-            max_pages = args.max_pages,
-            timeout   = args.timeout,
+            pdf         = args.pdf,
+            token       = args.token,
+            out         = args.out,
+            model       = args.model,
+            lang        = args.lang,
+            ocr         = args.ocr,
+            max_pages   = args.max_pages,
+            timeout     = args.timeout,
+            page_ranges = args.page_ranges,
         )
     except FileNotFoundError as e:
         sys.exit(f"[ERROR] {e}")
