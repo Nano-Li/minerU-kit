@@ -1,0 +1,186 @@
+"""
+batch_run.py — 批量解析工作文件夹中的所有 PDF，输出扁平化到 output/ 子文件夹。
+
+使用方法：
+  1. 修改下方 ── 配置区 ── 中的参数
+  2. 在编辑器中直接运行（Run / ▶）
+
+输出结构：
+  WORK_DIR/
+      output/
+          论文标题_A.md
+          论文标题_B.md
+          images/
+              abc123.png
+              def456.png
+              ...
+      .processed          ← 已处理 PDF 的记录文件（自动维护，防止重复提交）
+
+注意：
+  - 每次运行时，已成功处理的 PDF 会被跳过（依据 .processed 记录）
+  - 删除 output/.processed 可强制重新处理所有文件
+  - 若 output/ 中已存在同名 .md 则跳过，不覆盖
+"""
+
+import shutil
+import sys
+from pathlib import Path
+
+from mineru_client import parse_pdf
+
+# ════════════════════════════════════════════════════════════════════════════
+# ── 配置区（每次改这里就好）────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+
+# 必填：包含多个 PDF 的工作文件夹
+WORK_DIR = r"D:\path\to\your\pdf_folder"
+
+# 必填：MinerU API Token（在 mineru.net 申请）
+TOKEN = "your_mineru_api_token_here"
+
+# 解析模型："pipeline"（默认，速度快）或 "vlm"（复杂版式更准）
+MODEL = "pipeline"
+
+# 文档语言，可选值：
+#   "ch"         — 中文 + 英文（默认）
+#   "ch_server"  — 中文 / 英文 / 繁体中文 / 日文
+#   "en"         — 纯英文
+#   "latin"      — 法语、德语、西班牙语、意大利语、葡萄牙语等拉丁字母语言
+#   "japan"      — 日文
+#   "korean"     — 韩文
+#   "arabic"     — 阿拉伯语
+#   "cyrillic"   — 俄语等西里尔字母语言
+#   "devanagari" — 印地语、梵文等
+LANG = "en"
+
+# 是否强制 OCR（扫描版 PDF 建议设为 True）
+OCR = False
+
+# 每段最大页数（超过此页数的 PDF 会自动分段提交，默认 200）
+MAX_PAGES = 200
+
+# 每段等待超时（分钟，默认 30）
+TIMEOUT = 30
+
+# ════════════════════════════════════════════════════════════════════════════
+# ── 以下无需修改 ────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _flatten_to_output(per_paper_dir: Path, flat_output: Path) -> None:
+    """
+    将 parse_pdf 生成的论文子文件夹内容压平到 flat_output：
+      - <per_paper_dir>/<title>.md  →  flat_output/<title>.md
+      - <per_paper_dir>/images/*    →  flat_output/images/（逐文件，已存在则跳过）
+    完成后删除 per_paper_dir。
+
+    若 md 文件名仍为通用名（full.md / full_merged.md，即标题提取失败的情况），
+    则以文件夹名作为替代文件名，避免批量处理时发生冲突。
+    """
+    flat_output.mkdir(parents=True, exist_ok=True)
+    images_dst = flat_output / "images"
+    images_dst.mkdir(exist_ok=True)
+
+    # ── 移动 .md 文件 ────────────────────────────────────────────────────────
+    md_files = list(per_paper_dir.glob("*.md"))
+    for md in md_files:
+        # 通用名 fallback：用文件夹名（即论文标题或 PDF stem）来命名
+        if md.stem in ("full", "full_merged"):
+            target_name = f"{per_paper_dir.name}.md"
+        else:
+            target_name = md.name
+
+        dst_md = flat_output / target_name
+        if dst_md.exists():
+            print(f"  [SKIP] MD 已存在，跳过: {target_name}")
+        else:
+            shutil.move(str(md), dst_md)
+            print(f"  [md]  → {target_name}")
+
+    # ── 移动 images ──────────────────────────────────────────────────────────
+    img_src = per_paper_dir / "images"
+    if img_src.is_dir():
+        moved = skipped = 0
+        for img in img_src.iterdir():
+            if img.is_file():
+                dst_img = images_dst / img.name
+                if dst_img.exists():
+                    skipped += 1
+                else:
+                    shutil.move(str(img), dst_img)
+                    moved += 1
+        print(f"  [img] 移动 {moved} 张，已存在跳过 {skipped} 张")
+
+    # ── 删除已清空的论文子文件夹 ─────────────────────────────────────────────
+    shutil.rmtree(per_paper_dir, ignore_errors=True)
+
+
+def main() -> None:
+    work_dir = Path(WORK_DIR)
+    if not work_dir.is_dir():
+        sys.exit(f"[ERROR] WORK_DIR 不存在: {work_dir}")
+
+    pdfs = sorted(work_dir.glob("*.pdf"))
+    if not pdfs:
+        print(f"[INFO] 未在工作文件夹中找到 PDF 文件: {work_dir}")
+        return
+
+    flat_output = work_dir / "output"
+    flat_output.mkdir(exist_ok=True)
+
+    # ── 读取已处理记录 ────────────────────────────────────────────────────────
+    done_log  = flat_output / ".processed"
+    done_set: set[str] = set()
+    if done_log.exists():
+        done_set = set(done_log.read_text(encoding="utf-8").splitlines())
+
+    print(f"工作目录 : {work_dir}")
+    print(f"输出目录 : {flat_output}")
+    print(f"找到     : {len(pdfs)} 个 PDF")
+    print("═" * 60)
+
+    ok = skipped = failed = 0
+
+    for i, pdf in enumerate(pdfs, 1):
+        print(f"\n[{i}/{len(pdfs)}] {pdf.name}")
+
+        # 已成功处理过则跳过
+        if pdf.name in done_set:
+            print(f"  [SKIP] 已处理，跳过")
+            skipped += 1
+            continue
+
+        try:
+            per_paper_dir = parse_pdf(
+                pdf       = pdf,
+                token     = TOKEN,
+                out       = flat_output,
+                model     = MODEL,
+                lang      = LANG,
+                ocr       = OCR,
+                max_pages = MAX_PAGES,
+                timeout   = TIMEOUT,
+            )
+            _flatten_to_output(per_paper_dir, flat_output)
+
+            # 记录为已处理
+            with done_log.open("a", encoding="utf-8") as f:
+                f.write(pdf.name + "\n")
+            done_set.add(pdf.name)
+            ok += 1
+
+        except SystemExit as e:
+            print(f"\n  [ERROR] {e}")
+            failed += 1
+        except Exception as e:
+            print(f"\n  [ERROR] 未预期的错误: {e}")
+            failed += 1
+
+    print("\n" + "═" * 60)
+    print(f"  完成：成功 {ok} 个，跳过 {skipped} 个，失败 {failed} 个")
+    print(f"  输出目录: {flat_output}")
+    print("═" * 60)
+
+
+if __name__ == "__main__":
+    main()
