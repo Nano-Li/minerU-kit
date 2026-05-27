@@ -125,7 +125,7 @@ python mineru_client.py doc.pdf    --token sk-xxxx --model vlm
 |-----------------|--------------|-----------------------------------------------------------------------------------------------------------|
 | `pdf`           | *(required)* | Path to the local PDF file                                                                                |
 | `--token`       | *(required)* | MinerU API token — obtain from [mineru.net](https://mineru.net)                                           |
-| `--out`         | auto         | Output directory (default: `output/<title>/` inside the project)                                         |
+| `--out`         | auto         | Parent output directory. Results are always placed in `<out>/<title>/`. Defaults to `output/<title>/` inside the project. |
 | `--model`       | `pipeline`   | Parser model: `pipeline` (fast) or `vlm` (better for complex layouts)                                    |
 | `--lang`        | `ch`         | Language hint: `ch`, `ch_server`, `en`, `latin` (French/German/Spanish/…), `japan`, `korean`, `arabic`, `cyrillic`, `devanagari` |
 | `--ocr`         | `False`      | Force OCR mode — use for scanned PDFs                                                                     |

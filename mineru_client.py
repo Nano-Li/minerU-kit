@@ -505,7 +505,7 @@ def parse_pdf(
     if pdf_path.suffix.lower() != ".pdf":
         print(f"[WARN] File does not end with .pdf: {pdf_path.name}")
 
-    out_base  = Path(out).resolve() if out else DEFAULT_OUTPUT_DIR / pdf_path.stem
+    out_base  = Path(out).resolve() / pdf_path.stem if out else DEFAULT_OUTPUT_DIR / pdf_path.stem
     timeout_s = timeout * 60
     pdf_name  = _sanitize_filename(pdf_path.name)
 
@@ -575,16 +575,15 @@ def parse_pdf(
     if title_clean:
         print(f"\n  Title detected: {title_raw}")
 
-        # Rename output directory (only when using the default output path)
-        if not out:
-            new_base = out_base.parent / title_clean
-            if new_base != out_base:
-                if new_base.exists():
-                    print(f"  [WARN] Target dir already exists, keeping original name: {out_base.name}")
-                else:
-                    out_base.rename(new_base)
-                    out_base = new_base
-                    print(f"  Output dir → {out_base.name}")
+        # Rename output directory from <pdf_stem> to <title_clean>
+        new_base = out_base.parent / title_clean
+        if new_base != out_base:
+            if new_base.exists():
+                print(f"  [WARN] Target dir already exists, keeping original name: {out_base.name}")
+            else:
+                out_base.rename(new_base)
+                out_base = new_base
+                print(f"  Output dir → {out_base.name}")
 
         # Rename the final md file
         md_src_name = "full_merged.md" if n_seg > 1 else "full.md"
