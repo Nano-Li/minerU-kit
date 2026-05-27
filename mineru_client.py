@@ -456,15 +456,16 @@ def merge_parts(out_base: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def parse_pdf(
-    pdf:         str | Path,
-    token:       str,
-    out:         str | Path | None = None,
-    model:       str = "pipeline",
-    lang:        str = "ch",
-    ocr:         bool = False,
-    max_pages:   int = 200,
-    timeout:     int = 30,
-    page_ranges: str | None = None,
+    pdf:          str | Path,
+    token:        str,
+    out:          str | Path | None = None,
+    model:        str = "pipeline",
+    lang:         str = "ch",
+    ocr:          bool = False,
+    max_pages:    int = 200,
+    timeout:      int = 30,
+    page_ranges:  str | None = None,
+    use_filename: bool = False,
 ) -> Path:
     """
     Parse a local PDF with MinerU cloud API and extract results to disk.
@@ -488,12 +489,14 @@ def parse_pdf(
     ocr         : Force OCR mode (is_ocr=True).  Use for scanned PDFs.
     max_pages   : Max pages per auto-split segment (default 200).  Ignored when
                   page_ranges is set.
-    timeout     : Per-segment poll timeout in minutes (default 30).
-    page_ranges : Manual page selection passed directly to the API, e.g. "1-50"
-                  or "1-50,80-100".  When set, auto-split is skipped and the
-                  entire string is submitted as a single task.
-                  Format: comma-separated pages/ranges, e.g. "2,4-6,10-20".
-                  Use "2--2" to mean "page 2 to second-to-last page".
+    timeout      : Per-segment poll timeout in minutes (default 30).
+    page_ranges  : Manual page selection passed directly to the API, e.g. "1-50"
+                   or "1-50,80-100".  When set, auto-split is skipped and the
+                   entire string is submitted as a single task.
+                   Format: comma-separated pages/ranges, e.g. "2,4-6,10-20".
+                   Use "2--2" to mean "page 2 to second-to-last page".
+    use_filename : When True, skip title extraction and name the output folder
+                   and MD file after the PDF filename (stem) instead.
 
     Returns
     -------
@@ -564,19 +567,25 @@ def parse_pdf(
     if n_seg > 1:
         merge_parts(out_base)
 
-    # ── Extract title from layout.json and rename output dir + md file ────
-    layout_for_title = (
-        out_base / "part_001" / "layout.json" if n_seg > 1
-        else out_base / "layout.json"
-    )
-    title_raw   = _extract_title_from_layout(layout_for_title)
-    title_clean = _clean_for_path(title_raw) if title_raw else None
+    # ── Determine final name: PDF filename or extracted title ─────────────
+    if use_filename:
+        name_clean = _clean_for_path(pdf_path.stem)
+        print(f"\n  Using PDF filename: {pdf_path.name}")
+    else:
+        layout_for_title = (
+            out_base / "part_001" / "layout.json" if n_seg > 1
+            else out_base / "layout.json"
+        )
+        title_raw  = _extract_title_from_layout(layout_for_title)
+        name_clean = _clean_for_path(title_raw) if title_raw else None
+        if name_clean:
+            print(f"\n  Title detected: {title_raw}")
+        else:
+            print("\n  [WARN] No title block found in layout.json; keeping default file names.")
 
-    if title_clean:
-        print(f"\n  Title detected: {title_raw}")
-
-        # Rename output directory from <pdf_stem> to <title_clean>
-        new_base = out_base.parent / title_clean
+    if name_clean:
+        # Rename output directory (<pdf_stem> → <name_clean>)
+        new_base = out_base.parent / name_clean
         if new_base != out_base:
             if new_base.exists():
                 print(f"  [WARN] Target dir already exists, keeping original name: {out_base.name}")
@@ -589,11 +598,10 @@ def parse_pdf(
         md_src_name = "full_merged.md" if n_seg > 1 else "full.md"
         md_src = out_base / md_src_name
         if md_src.exists():
-            md_dst = out_base / f"{title_clean}.md"
-            md_src.rename(md_dst)
-            print(f"  MD file    → {md_dst.name}")
-    else:
-        print("\n  [WARN] No title block found in layout.json; keeping default file names.")
+            md_dst = out_base / f"{name_clean}.md"
+            if md_src != md_dst:
+                md_src.rename(md_dst)
+                print(f"  MD file    → {md_dst.name}")
 
     print(f"\n  Results: {out_base}")
     return out_base
@@ -628,19 +636,23 @@ Examples:
     parser.add_argument("--page-ranges", type=str, default=None,
                         help="Manual page selection, e.g. '1-50' or '1-50,80-100'. "
                              "Overrides auto-split when set.")
+    parser.add_argument("--use-filename", action="store_true",
+                        help="Name output folder and MD file after the PDF filename "
+                             "instead of the extracted paper title.")
 
     args = parser.parse_args()
     try:
         parse_pdf(
-            pdf         = args.pdf,
-            token       = args.token,
-            out         = args.out,
-            model       = args.model,
-            lang        = args.lang,
-            ocr         = args.ocr,
-            max_pages   = args.max_pages,
-            timeout     = args.timeout,
-            page_ranges = args.page_ranges,
+            pdf          = args.pdf,
+            token        = args.token,
+            out          = args.out,
+            model        = args.model,
+            lang         = args.lang,
+            ocr          = args.ocr,
+            max_pages    = args.max_pages,
+            timeout      = args.timeout,
+            page_ranges  = args.page_ranges,
+            use_filename = args.use_filename,
         )
     except FileNotFoundError as e:
         sys.exit(f"[ERROR] {e}")

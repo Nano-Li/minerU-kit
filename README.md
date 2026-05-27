@@ -82,6 +82,9 @@ OCR = False
 # Note: when set, MAX_PAGES auto-segmentation is ignored
 PAGE_RANGES = ""
 
+# Output naming: False = use extracted paper title (default); True = use PDF filename
+USE_FILENAME = False
+
 # Max pages per segment; PDFs exceeding this are split automatically (default 200)
 # Ignored when PAGE_RANGES is set
 MAX_PAGES = 200
@@ -95,15 +98,16 @@ TIMEOUT = 30
 
 if __name__ == "__main__":
     parse_pdf(
-        pdf         = PDF,
-        token       = TOKEN,
-        out         = OUT or None,
-        model       = MODEL,
-        lang        = LANG,
-        ocr         = OCR,
-        max_pages   = MAX_PAGES,
-        timeout     = TIMEOUT,
-        page_ranges = PAGE_RANGES or None,
+        pdf          = PDF,
+        token        = TOKEN,
+        out          = OUT or None,
+        model        = MODEL,
+        lang         = LANG,
+        ocr          = OCR,
+        max_pages    = MAX_PAGES,
+        timeout      = TIMEOUT,
+        page_ranges  = PAGE_RANGES or None,
+        use_filename = USE_FILENAME,
     )
 ```
 
@@ -129,9 +133,10 @@ python mineru_client.py doc.pdf    --token sk-xxxx --model vlm
 | `--model`       | `pipeline`   | Parser model: `pipeline` (fast) or `vlm` (better for complex layouts)                                    |
 | `--lang`        | `ch`         | Language hint: `ch`, `ch_server`, `en`, `latin` (French/German/Spanish/…), `japan`, `korean`, `arabic`, `cyrillic`, `devanagari` |
 | `--ocr`         | `False`      | Force OCR mode — use for scanned PDFs                                                                     |
-| `--page-ranges` | —            | Parse specific pages only, e.g. `"1-50"`, `"1-50,80-100"`, `"2--2"`. Disables auto-segmentation.        |
-| `--max-pages`   | `200`        | Max pages per segment; larger PDFs are split automatically (ignored when `--page-ranges` is set)          |
-| `--timeout`     | `30`         | Per-segment poll timeout in minutes                                                                       |
+| `--page-ranges`  | —            | Parse specific pages only, e.g. `"1-50"`, `"1-50,80-100"`, `"2--2"`. Disables auto-segmentation.       |
+| `--use-filename` | `False`      | Name output folder and MD file after the PDF filename instead of the extracted paper title.              |
+| `--max-pages`    | `200`        | Max pages per segment; larger PDFs are split automatically (ignored when `--page-ranges` is set)         |
+| `--timeout`      | `30`         | Per-segment poll timeout in minutes                                                                      |
 
 ---
 

@@ -56,6 +56,9 @@ LANG = "en"
 # 是否强制 OCR（扫描版 PDF 建议设为 True）
 OCR = False
 
+# 是否用 PDF 文件名命名输出（True = 用原始文件名；False = 用提取出的论文标题，默认）
+USE_FILENAME = False
+
 # 每段最大页数（超过此页数的 PDF 会自动分段提交，默认 200）
 MAX_PAGES = 200
 
@@ -166,14 +169,15 @@ def main() -> None:
 
         try:
             per_paper_dir = parse_pdf(
-                pdf       = pdf,
-                token     = TOKEN,
-                out       = flat_output,
-                model     = MODEL,
-                lang      = LANG,
-                ocr       = OCR,
-                max_pages = MAX_PAGES,
-                timeout   = TIMEOUT,
+                pdf          = pdf,
+                token        = TOKEN,
+                out          = flat_output,
+                model        = MODEL,
+                lang         = LANG,
+                ocr          = OCR,
+                max_pages    = MAX_PAGES,
+                timeout      = TIMEOUT,
+                use_filename = USE_FILENAME,
             )
             _flatten_to_output(per_paper_dir, flat_output, pdf.stem)
 
