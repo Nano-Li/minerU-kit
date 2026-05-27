@@ -19,7 +19,7 @@ batch_run.py — 批量解析工作文件夹中的所有 PDF，输出扁平化�
 注意：
   - 每次运行时，已成功处理的 PDF 会被跳过（依据 .processed 记录）
   - 删除 output/.processed 可强制重新处理所有文件
-  - 若 output/ 中已存在同名 .md 则跳过，不覆盖
+  - 若 output/ 中已存在同名 .md，自动追加编号 (1)(2)… 而非跳过，保证每个 PDF 都有输出
 """
 
 import shutil
@@ -67,15 +67,30 @@ TIMEOUT = 30
 # ════════════════════════════════════════════════════════════════════════════
 
 
-def _flatten_to_output(per_paper_dir: Path, flat_output: Path) -> None:
+def _unique_md_path(flat_output: Path, preferred_stem: str) -> Path:
+    """
+    返回 flat_output/<preferred_stem>.md；
+    若该路径已存在，则依次尝试 <stem>(1).md、<stem>(2).md … 直到找到空位。
+    """
+    candidate = flat_output / f"{preferred_stem}.md"
+    counter = 1
+    while candidate.exists():
+        candidate = flat_output / f"{preferred_stem}({counter}).md"
+        counter += 1
+    return candidate
+
+
+def _flatten_to_output(per_paper_dir: Path, flat_output: Path, pdf_stem: str) -> None:
     """
     将 parse_pdf 生成的论文子文件夹内容压平到 flat_output：
       - <per_paper_dir>/<title>.md  →  flat_output/<title>.md
       - <per_paper_dir>/images/*    →  flat_output/images/（逐文件，已存在则跳过）
     完成后删除 per_paper_dir。
 
-    若 md 文件名仍为通用名（full.md / full_merged.md，即标题提取失败的情况），
-    则以文件夹名作为替代文件名，避免批量处理时发生冲突。
+    命名规则（优先级递减）：
+      1. 论文标题（parse_pdf 提取并重命名后的 md 文件名）
+      2. 若标题提取失败（md 仍为 full.md / full_merged.md），改用 PDF 文件名（pdf_stem）
+      3. 若目标路径已存在（标题重复），自动追加 (1)(2)… 确保不丢失任何结果
     """
     flat_output.mkdir(parents=True, exist_ok=True)
     images_dst = flat_output / "images"
@@ -84,18 +99,17 @@ def _flatten_to_output(per_paper_dir: Path, flat_output: Path) -> None:
     # ── 移动 .md 文件 ────────────────────────────────────────────────────────
     md_files = list(per_paper_dir.glob("*.md"))
     for md in md_files:
-        # 通用名 fallback：用文件夹名（即论文标题或 PDF stem）来命名
+        # 标题提取失败时 md 名为 full.md / full_merged.md，改用 PDF 原文件名
         if md.stem in ("full", "full_merged"):
-            target_name = f"{per_paper_dir.name}.md"
+            preferred_stem = pdf_stem
         else:
-            target_name = md.name
+            preferred_stem = md.stem
 
-        dst_md = flat_output / target_name
-        if dst_md.exists():
-            print(f"  [SKIP] MD 已存在，跳过: {target_name}")
-        else:
-            shutil.move(str(md), dst_md)
-            print(f"  [md]  → {target_name}")
+        dst_md = _unique_md_path(flat_output, preferred_stem)
+        if dst_md.stem != preferred_stem:
+            print(f"  [WARN] 标题重复，自动重命名: {md.name} → {dst_md.name}")
+        shutil.move(str(md), dst_md)
+        print(f"  [md]  → {dst_md.name}")
 
     # ── 移动 images ──────────────────────────────────────────────────────────
     img_src = per_paper_dir / "images"
@@ -161,7 +175,7 @@ def main() -> None:
                 max_pages = MAX_PAGES,
                 timeout   = TIMEOUT,
             )
-            _flatten_to_output(per_paper_dir, flat_output)
+            _flatten_to_output(per_paper_dir, flat_output, pdf.stem)
 
             # 记录为已处理
             with done_log.open("a", encoding="utf-8") as f:
